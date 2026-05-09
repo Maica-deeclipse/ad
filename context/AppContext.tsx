@@ -3,6 +3,7 @@
  * Manages all app data: clearances, staff roles, and student submissions
  */
 
+import { apiService } from '@/services/api';
 import { AppContextType, Clearance, Department, StaffRole, StudentClearance, StudentRegistration, User } from '@/types';
 import { db, getNamedFirebaseApp } from '@/utils/firebase';
 import {
@@ -38,10 +39,17 @@ export const AppContext = createContext<AppContextType>({
   deleteDepartment: () => {},
   createStaffRole: () => {},
   updateStaffRole: () => {},
+  archiveStaffRole: () => {},
+  restoreStaffRole: () => {},
   deleteStaffRole: () => {},
   createClearance: () => {},
   updateClearance: () => {},
+  archiveClearance: () => {},
+  restoreClearance: () => {},
   deleteClearance: () => {},
+  archiveStudent: async () => {},
+  restoreStudent: async () => {},
+  deleteStudent: async () => {},
   submitStudentClearance: () => {},
   approveClearance: () => {},
   rejectClearance: () => {},
@@ -214,10 +222,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Staff Role Management
   const createStaffRole = useCallback(async (name: string, description: string) => {
     try {
+      const now = new Date().toISOString();
       await addDoc(collection(db, 'staffRoles'), {
         name,
         description,
-        createdAt: new Date().toISOString(),
+        status: 'active' as const,
+        createdAt: now,
+        updatedAt: now,
       });
     } catch (error) {
       console.error("Error creating staff role:", error);
@@ -230,9 +241,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await updateDoc(doc(db, 'staffRoles', id), {
         name,
         description,
+        updatedAt: new Date().toISOString(),
       });
     } catch (error) {
       console.error("Error updating staff role:", error);
+      throw error;
+    }
+  }, []);
+
+  const archiveStaffRole = useCallback(async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'staffRoles', id), {
+        status: 'archived' as const,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error archiving staff role:", error);
+      throw error;
+    }
+  }, []);
+
+  const restoreStaffRole = useCallback(async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'staffRoles', id), {
+        status: 'active' as const,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error restoring staff role:", error);
       throw error;
     }
   }, []);
@@ -259,6 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const docRef = await addDoc(collection(db, 'clearances'), {
           name,
           description,
+          status: 'active' as const,
           staffRole,
           departmentsAllowed,
           createdAt: now,
@@ -268,6 +305,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: docRef.id,
           name,
           description,
+          status: 'active' as const,
           staffRole,
           departmentsAllowed,
           createdAt: now,
@@ -289,6 +327,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id,
           name,
           description,
+          status: clearances.find((clearance) => clearance.id === id)?.status || 'active',
           staffRole,
           departmentsAllowed,
           createdAt: clearances.find((clearance) => clearance.id === id)?.createdAt || now,
@@ -298,6 +337,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await updateDoc(doc(db, 'clearances', id), {
           name,
           description,
+          status: updatedClearance.status,
           staffRole,
           departmentsAllowed,
           updatedAt: now,
@@ -316,6 +356,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await deleteDoc(doc(db, 'clearances', id));
     } catch (error) {
       console.error("Error deleting clearance:", error);
+      throw error;
+    }
+  }, []);
+
+  const archiveClearance = useCallback(async (id: string) => {
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'clearances', id), {
+        status: 'archived' as const,
+        updatedAt: now,
+      });
+    } catch (error) {
+      console.error("Error archiving clearance:", error);
+      throw error;
+    }
+  }, []);
+
+  const restoreClearance = useCallback(async (id: string) => {
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'clearances', id), {
+        status: 'active' as const,
+        updatedAt: now,
+      });
+    } catch (error) {
+      console.error("Error restoring clearance:", error);
       throw error;
     }
   }, []);
@@ -389,6 +455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         name: registration.name,
         email: registration.email,
         role: 'student' as const,
+        status: 'active' as const,
         department: registration.department,
         phone: registration.phone || '',
         createdAt: now,
@@ -414,6 +481,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approvedBy: 'admin', // Could be improved to track which admin approved
         rejectionReason: '',
       });
+
+      try {
+        await apiService.sendStudentApprovalEmail({
+          student_name: registration.name,
+          student_email: registration.email,
+          department: registration.department,
+        });
+      } catch (emailError) {
+        console.error('Approval email failed:', emailError);
+      }
     } catch (error) {
       console.error("Error approving pending student:", error);
       throw error;
@@ -422,16 +499,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const rejectPendingStudent = useCallback(async (registrationId: string, reason: string) => {
     try {
+      const registration = pendingStudents.find(p => p.id === registrationId);
+      if (!registration) throw new Error('Registration not found');
+
       await updateDoc(doc(db, 'pendingStudents', registrationId), {
         status: 'rejected' as const,
         rejectionReason: reason,
         rejectedAt: new Date().toISOString(),
       });
+
+      try {
+        await apiService.sendStudentRejectionEmail({
+          student_name: registration.name,
+          student_email: registration.email,
+          department: registration.department || 'Not specified',
+          rejection_reason: reason,
+        });
+      } catch (emailError) {
+        console.error('Rejection email failed:', emailError);
+      }
     } catch (error) {
       console.error("Error rejecting pending student:", error);
       throw error;
     }
-  }, []);
+  }, [pendingStudents]);
 
   const updateStudentDepartment = useCallback(async (studentId: string, department: string) => {
     try {
@@ -503,6 +594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         name,
         email,
         role: 'staff' as const,
+        status: 'active' as const,
         staffRole,
         phone,
         createdAt: now,
@@ -513,6 +605,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw error;
     } finally {
       await signOut(secondaryAuth);
+    }
+  }, []);
+
+  const archiveStudent = useCallback(async (studentId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', studentId), {
+        status: 'archived' as const,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error archiving student:", error);
+      throw error;
+    }
+  }, []);
+
+  const restoreStudent = useCallback(async (studentId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', studentId), {
+        status: 'active' as const,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error restoring student:", error);
+      throw error;
+    }
+  }, []);
+
+  const deleteStudent = useCallback(async (studentId: string) => {
+    try {
+      const studentClearanceSnapshot = await getDocs(
+        query(collection(db, 'studentClearances'), where('studentId', '==', studentId))
+      );
+
+      await Promise.all(studentClearanceSnapshot.docs.map((studentClearanceDoc) => deleteDoc(studentClearanceDoc.ref)));
+      await deleteDoc(doc(db, 'users', studentId));
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      throw error;
     }
   }, []);
 
@@ -536,10 +666,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteDepartment,
         createStaffRole,
         updateStaffRole,
+        archiveStaffRole,
+        restoreStaffRole,
         deleteStaffRole,
         createClearance,
         updateClearance,
+        archiveClearance,
+        restoreClearance,
         deleteClearance,
+        archiveStudent,
+        restoreStudent,
+        deleteStudent,
         submitStudentClearance,
         approveClearance,
         rejectClearance,

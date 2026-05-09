@@ -40,11 +40,11 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
       await forgotPassword(email);
       Alert.alert(
         'Email Sent',
-        'If an account exists for this email, you will receive a reset token.',
+        'If an account exists for this email, you will receive a password reset link.',
         [
           { 
             text: 'OK', 
-            onPress: () => navigation?.navigate('ResetPassword', { email }) 
+            onPress: () => navigation?.navigate('Login')
           }
         ]
       );
@@ -63,7 +63,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Forgot Password</Text>
-        <Text style={styles.subtitle}>Enter your email to receive a reset token</Text>
+        <Text style={styles.subtitle}>Enter your email to receive a password reset link</Text>
       </View>
 
       {/* Form */}
@@ -80,7 +80,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
         />
 
         <Button
-          title={isLoading ? 'Sending...' : 'Send Reset Token'}
+          title={isLoading ? 'Sending...' : 'Send Reset Link'}
           onPress={handleSubmit}
           disabled={isLoading}
           style={styles.submitButton}

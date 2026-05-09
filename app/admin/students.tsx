@@ -1,20 +1,22 @@
 /**
  * Admin Students Screen
- * View all students, their clearance status, and manage department assignments
+ * View students, search and filter records, and manage archive lifecycle.
  */
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { TextInput } from '@/components/ui/text-input';
 import { Colors, Spacing, Typography } from '@/constants/colors';
 import { useApp } from '@/context/AppContext';
 import { Department, StudentClearance, User } from '@/types';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -25,18 +27,47 @@ interface AdminStudentsScreenProps {
   navigation?: any;
 }
 
-const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation }) => {
-  const { users, studentClearances, departments, updateStudentDepartment } = useApp();
+type StudentTab = 'active' | 'archived';
+type StudentStatusFilter = 'all' | 'complete' | 'in-progress' | 'needs-attention' | 'no-clearances';
+
+const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = () => {
+  const {
+    users,
+    studentClearances,
+    departments,
+    updateStudentDepartment,
+    archiveStudent,
+    restoreStudent,
+    deleteStudent,
+  } = useApp();
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [showDepartmentModal, setShowDepartmentModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<StudentTab>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState<'all' | string>('all');
+  const [statusFilter, setStatusFilter] = useState<StudentStatusFilter>('all');
 
   const students = useMemo(() => users.filter((user) => user.role === 'student'), [users]);
-  const activeDepartments = departments.filter((department) => department.status === 'active');
+  const activeDepartments = useMemo(
+    () => departments.filter((department) => department.status === 'active'),
+    [departments]
+  );
 
-  const getStudentClearances = (studentId: string) => {
-    return studentClearances.filter((clearance) => clearance.studentId === studentId);
-  };
+  const activeStudents = useMemo(
+    () => students.filter((student) => (student.status || 'active') !== 'archived'),
+    [students]
+  );
+  const archivedStudents = useMemo(
+    () => students.filter((student) => (student.status || 'active') === 'archived'),
+    [students]
+  );
+
+  const getStudentClearances = useCallback(
+    (studentId: string) => studentClearances.filter((clearance) => clearance.studentId === studentId),
+    [studentClearances]
+  );
 
   const getClearanceStatus = (items: StudentClearance[]) => {
     if (items.length === 0) return 'No clearances';
@@ -56,10 +87,52 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
     return departments.find((department) => department.id === departmentId)?.name || 'Unknown Department';
   };
 
+  const getMatchesStatusFilter = useCallback(
+    (status: string) => {
+      switch (statusFilter) {
+        case 'complete':
+          return status === 'Complete';
+        case 'in-progress':
+          return status === 'In Progress';
+        case 'needs-attention':
+          return status === 'Needs Attention';
+        case 'no-clearances':
+          return status === 'No clearances';
+        default:
+          return true;
+      }
+    },
+    [statusFilter]
+  );
+
+  const displayedStudents = useMemo(() => {
+    const source = activeTab === 'active' ? activeStudents : archivedStudents;
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
+    return source.filter((student) => {
+      const clearances = getStudentClearances(student.id);
+      const status = getClearanceStatus(clearances);
+      const departmentMatches =
+        departmentFilter === 'all' || (student.department || '') === departmentFilter;
+      const statusMatches = getMatchesStatusFilter(status);
+      const searchMatches =
+        normalizedSearch.length === 0 ||
+        student.name.toLowerCase().includes(normalizedSearch) ||
+        student.email.toLowerCase().includes(normalizedSearch);
+
+      return departmentMatches && statusMatches && searchMatches;
+    });
+  }, [activeStudents, activeTab, archivedStudents, departmentFilter, getMatchesStatusFilter, getStudentClearances, searchQuery]);
+
   const openDepartmentModal = (student: User) => {
     setSelectedStudent(student);
     setSelectedDepartment(student.department || '');
     setShowDepartmentModal(true);
+  };
+
+  const openDetailsModal = (student: User) => {
+    setSelectedStudent(student);
+    setShowDetailsModal(true);
   };
 
   const handleSaveDepartment = async () => {
@@ -76,7 +149,6 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
     try {
       await updateStudentDepartment(selectedStudent.id, selectedDepartment);
       setShowDepartmentModal(false);
-      setSelectedStudent(null);
       if (Platform.OS !== 'web') {
         Alert.alert('Success', 'Student department updated successfully');
       } else {
@@ -86,6 +158,48 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
       Alert.alert('Error', error.message || 'Failed to update department');
     }
   };
+
+  const runStudentAction = async (
+    action: () => Promise<void>,
+    successMessage: string,
+    closeAfter = false
+  ) => {
+    try {
+      await action();
+      if (closeAfter) {
+        setShowDetailsModal(false);
+      }
+      if (Platform.OS !== 'web') {
+        Alert.alert('Success', successMessage);
+      } else {
+        window.alert(successMessage);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Operation failed');
+    }
+  };
+
+  const confirmAction = (
+    title: string,
+    message: string,
+    action: () => Promise<void>
+  ) => {
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        action();
+      }
+      return;
+    }
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', style: 'destructive', onPress: () => action() },
+    ]);
+  };
+
+  const selectedStudentClearances = selectedStudent ? getStudentClearances(selectedStudent.id) : [];
+  const selectedStudentStatus = getClearanceStatus(selectedStudentClearances);
+  const selectedStudentProgress = getProgress(selectedStudentClearances);
 
   const renderDepartmentOption = (department: Department) => {
     const isSelected = selectedDepartment === department.id;
@@ -112,17 +226,96 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
           <Text style={styles.title}>Students</Text>
         </View>
         <Text style={styles.subtitle}>
-          {students.length} student{students.length !== 1 ? 's' : ''}
+          {activeStudents.length} active student{activeStudents.length !== 1 ? 's' : ''}, {archivedStudents.length} archived
         </Text>
       </View>
 
-      {students.length === 0 ? (
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'active' && styles.activeTab]}
+          onPress={() => setActiveTab('active')}
+        >
+          <Text style={[styles.tabText, activeTab === 'active' && styles.activeTabText]}>
+            Active ({activeStudents.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'archived' && styles.activeTab]}
+          onPress={() => setActiveTab('archived')}
+        >
+          <Text style={[styles.tabText, activeTab === 'archived' && styles.activeTabText]}>
+            Archived ({archivedStudents.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.filtersCard}>
+        <TextInput
+          label="Search Students"
+          placeholder="Search by name or email"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+
+        <Text style={styles.filterLabel}>Department</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroller}>
+          <TouchableOpacity
+            style={[styles.filterChip, departmentFilter === 'all' && styles.filterChipSelected]}
+            onPress={() => setDepartmentFilter('all')}
+          >
+            <Text style={[styles.filterChipText, departmentFilter === 'all' && styles.filterChipTextSelected]}>
+              All
+            </Text>
+          </TouchableOpacity>
+          {activeDepartments.map((department) => {
+            const selected = departmentFilter === department.id;
+            return (
+              <TouchableOpacity
+                key={department.id}
+                style={[styles.filterChip, selected && styles.filterChipSelected]}
+                onPress={() => setDepartmentFilter(department.id)}
+              >
+                <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>
+                  {department.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={styles.filterLabel}>Progress Status</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroller}>
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'complete', label: 'Complete' },
+            { key: 'in-progress', label: 'In Progress' },
+            { key: 'needs-attention', label: 'Needs Attention' },
+            { key: 'no-clearances', label: 'No Clearances' },
+          ].map((option) => {
+            const selected = statusFilter === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.filterChip, selected && styles.filterChipSelected]}
+                onPress={() => setStatusFilter(option.key as StudentStatusFilter)}
+              >
+                <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {displayedStudents.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No students found</Text>
+          <Text style={styles.emptyText}>No students match the current filters</Text>
+          <Text style={styles.emptySubtext}>Try a different search, tab, department, or status filter.</Text>
         </View>
       ) : (
         <FlatList
-          data={students}
+          data={displayedStudents}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const clearances = getStudentClearances(item.id);
@@ -130,7 +323,7 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
             const progress = getProgress(clearances);
 
             return (
-              <Card>
+              <Card onPress={() => openDetailsModal(item)}>
                 <View style={styles.studentCard}>
                   <View style={styles.studentInfo}>
                     <Text style={styles.studentName}>{item.name}</Text>
@@ -156,34 +349,139 @@ const AdminStudentsScreen: React.FC<AdminStudentsScreenProps> = ({ navigation })
                     status={status === 'Complete' ? 'approved' : status === 'Needs Attention' ? 'rejected' : 'pending'}
                     size="small"
                   />
-                  <Button
-                    title="Change Department"
-                    onPress={() => openDepartmentModal(item)}
-                    variant="secondary"
-                    size="small"
-                  />
+                  <Text style={styles.viewDetailsText}>Tap to view details</Text>
                 </View>
-
-                {clearances.length > 0 ? (
-                  <View style={styles.clearancesPreview}>
-                    {clearances.map((clearance) => (
-                      <View key={clearance.id} style={styles.clearanceItem}>
-                        <Text style={styles.clearanceName}>
-                          {clearance.clearance?.name || 'Unknown Clearance'}
-                        </Text>
-                        <View style={styles.partsPreview}>
-                          <StatusBadge status={clearance.status} size="small" />
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
               </Card>
             );
           }}
           contentContainerStyle={styles.listContent}
         />
       )}
+
+      <Modal
+        visible={showDetailsModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDetailsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Student Details</Text>
+              <Text style={styles.modalSubtitle}>
+                {selectedStudent?.name} ({selectedStudent?.email})
+              </Text>
+
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Department</Text>
+                  <Text style={styles.summaryValue}>{getDepartmentName(selectedStudent?.department)}</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Progress</Text>
+                  <Text style={styles.summaryValue}>{selectedStudentProgress}%</Text>
+                </View>
+              </View>
+
+              <View style={styles.detailsStatusRow}>
+                <StatusBadge
+                  status={
+                    selectedStudentStatus === 'Complete'
+                      ? 'approved'
+                      : selectedStudentStatus === 'Needs Attention'
+                        ? 'rejected'
+                        : 'pending'
+                  }
+                  size="small"
+                />
+                <Text style={styles.detailsStatusText}>{selectedStudentStatus}</Text>
+              </View>
+
+              <Button
+                title="Change Department"
+                onPress={() => {
+                  setShowDetailsModal(false);
+                  if (selectedStudent) {
+                    openDepartmentModal(selectedStudent);
+                  }
+                }}
+                variant="secondary"
+                size="small"
+                style={styles.inlineButton}
+              />
+
+              <Text style={styles.sectionTitle}>Assigned Clearances</Text>
+              {selectedStudentClearances.length === 0 ? (
+                <Text style={styles.emptySubtext}>This student does not have assigned clearances yet.</Text>
+              ) : (
+                selectedStudentClearances.map((clearance) => (
+                  <View key={clearance.id} style={styles.clearanceItem}>
+                    <View style={styles.clearanceTextWrap}>
+                      <Text style={styles.clearanceName}>{clearance.clearance?.name || 'Unknown Clearance'}</Text>
+                      <Text style={styles.clearanceMeta}>{clearance.remarks || 'No remarks yet'}</Text>
+                    </View>
+                    <StatusBadge status={clearance.status} size="small" />
+                  </View>
+                ))
+              )}
+
+              <Text style={styles.sectionTitle}>Account Actions</Text>
+              {(selectedStudent?.status || 'active') !== 'archived' ? (
+                <Button
+                  title="Archive Student"
+                  onPress={() =>
+                    selectedStudent &&
+                    confirmAction(
+                      'Archive Student',
+                      `Archive ${selectedStudent.name}?`,
+                      () => runStudentAction(() => archiveStudent(selectedStudent.id), 'Student archived successfully', true)
+                    )
+                  }
+                  variant="secondary"
+                  size="small"
+                  style={styles.actionButton}
+                />
+              ) : (
+                <>
+                  <Button
+                    title="Restore Student"
+                    onPress={() =>
+                      selectedStudent &&
+                      runStudentAction(() => restoreStudent(selectedStudent.id), 'Student restored successfully', true)
+                    }
+                    variant="secondary"
+                    size="small"
+                    style={styles.actionButton}
+                  />
+                  <Button
+                    title="Delete Archived Student"
+                    onPress={() =>
+                      selectedStudent &&
+                      confirmAction(
+                        'Delete Student',
+                        `Permanently delete ${selectedStudent.name}? This cannot be undone.`,
+                        () => runStudentAction(() => deleteStudent(selectedStudent.id), 'Student deleted successfully', true)
+                      )
+                    }
+                    variant="danger"
+                    size="small"
+                    style={styles.actionButton}
+                  />
+                </>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Button
+                title="Close"
+                onPress={() => setShowDetailsModal(false)}
+                variant="secondary"
+                style={styles.modalButton}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showDepartmentModal}
@@ -239,17 +537,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  backButton: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    marginRight: Spacing.md,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontWeight: '600',
-  },
   title: {
     ...Typography.h2,
     color: Colors.text,
@@ -260,14 +547,85 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     marginTop: Spacing.xs,
   },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: Colors.primary,
+  },
+  tabText: {
+    ...Typography.body,
+    color: Colors.textLight,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: Colors.primary,
+  },
+  filtersCard: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  filterLabel: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  filterScroller: {
+    marginBottom: Spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginRight: Spacing.sm,
+  },
+  filterChipSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    ...Typography.caption,
+    color: Colors.text,
+  },
+  filterChipTextSelected: {
+    color: Colors.textInverse,
+    fontWeight: '600',
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
   },
   emptyText: {
     ...Typography.h3,
     color: Colors.textLight,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    ...Typography.body,
+    color: Colors.textLight,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
   },
   listContent: {
     paddingVertical: Spacing.md,
@@ -319,28 +677,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
   },
-  clearancesPreview: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  clearanceItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: Spacing.sm,
-  },
-  clearanceName: {
-    ...Typography.body,
-    color: Colors.text,
-    fontWeight: '600',
-    flex: 1,
-  },
-  partsPreview: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    alignItems: 'center',
+  viewDetailsText: {
+    ...Typography.caption,
+    color: Colors.textLight,
   },
   modalOverlay: {
     flex: 1,
@@ -353,6 +692,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     padding: Spacing.lg,
     paddingBottom: Spacing.xl,
+    maxHeight: '85%',
   },
   modalTitle: {
     ...Typography.h2,
@@ -363,6 +703,73 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textLight,
     marginBottom: Spacing.lg,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  summaryItem: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    padding: Spacing.md,
+  },
+  summaryLabel: {
+    ...Typography.caption,
+    color: Colors.textLight,
+  },
+  summaryValue: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '700',
+    marginTop: Spacing.xs,
+  },
+  detailsStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  detailsStatusText: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  inlineButton: {
+    marginBottom: Spacing.lg,
+  },
+  sectionTitle: {
+    ...Typography.h3,
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  clearanceItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.md,
+  },
+  clearanceTextWrap: {
+    flex: 1,
+  },
+  clearanceName: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  clearanceMeta: {
+    ...Typography.caption,
+    color: Colors.textLight,
+    marginTop: Spacing.xs,
+  },
+  actionButton: {
+    marginBottom: Spacing.sm,
   },
   departmentList: {
     marginBottom: Spacing.lg,
@@ -391,6 +798,7 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     gap: Spacing.md,
+    marginTop: Spacing.lg,
   },
   modalButton: {
     flex: 1,

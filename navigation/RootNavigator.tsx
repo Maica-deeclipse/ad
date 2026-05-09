@@ -39,7 +39,7 @@ import StudentSettingsScreen from '@/app/student/settings';
  * Conditionally renders screens based on authentication state and user role
  */
 export const RootNavigator: React.FC = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isInitializing } = useAuth();
   const [loggedOutScreen, setLoggedOutScreen] = React.useState<'login' | 'forgot-password' | 'reset-password'>('login');
   const [params, setParams] = React.useState<any>(null);
 
@@ -57,7 +57,7 @@ export const RootNavigator: React.FC = () => {
     goBack: () => setLoggedOutScreen('login'),
   };
 
-  if (isLoading) {
+  if (isInitializing) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={Colors.primary} />

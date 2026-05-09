@@ -26,6 +26,12 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
   size = 'medium',
 }) => {
+  const handlePress = (event?: any) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    onPress();
+  };
+
   const getBackgroundColor = (): string => {
     if (disabled) return Colors.border;
     switch (variant) {
@@ -47,8 +53,9 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
+      accessibilityRole="button"
       style={({ pressed }) => [
         styles.button,
         {

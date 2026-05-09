@@ -1,6 +1,6 @@
 /**
  * Admin Clearances Screen
- * Manage clearances - create, edit, delete
+ * Manage clearances with active and archived states.
  */
 
 import { Button } from '@/components/ui/button';
@@ -8,25 +8,34 @@ import { Card } from '@/components/ui/card';
 import { TextInput } from '@/components/ui/text-input';
 import { Colors, Spacing, Typography } from '@/constants/colors';
 import { useApp } from '@/context/AppContext';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 interface AdminClearancesScreenProps {
   navigation?: any;
 }
 
-const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigation }) => {
-  const { clearances, staffRoles, departments, createClearance, updateClearance, deleteClearance } = useApp();
+const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = () => {
+  const {
+    clearances,
+    staffRoles,
+    departments,
+    createClearance,
+    updateClearance,
+    archiveClearance,
+    restoreClearance,
+    deleteClearance,
+  } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editClearanceId, setEditClearanceId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -35,6 +44,21 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
   const [departmentsAllowed, setDepartmentsAllowed] = useState<string[]>([]);
   const [errors, setErrors] = useState<{name?: string; description?: string; staffRole?: string; departments?: string}>({});
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const activeClearances = useMemo(
+    () => clearances.filter((clearance) => (clearance.status || 'active') !== 'archived'),
+    [clearances]
+  );
+  const archivedClearances = useMemo(
+    () => clearances.filter((clearance) => (clearance.status || 'active') === 'archived'),
+    [clearances]
+  );
+  const displayedClearances = showArchived ? archivedClearances : activeClearances;
+  const activeRoles = useMemo(
+    () => staffRoles.filter((role) => (role.status || 'active') !== 'archived'),
+    [staffRoles]
+  );
 
   const handleSave = async () => {
     const safeName = name || '';
@@ -48,7 +72,7 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
 
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
-    
+
     try {
       if (editClearanceId) {
         await updateClearance(editClearanceId, name, description, staffRole, departmentsAllowed);
@@ -58,12 +82,7 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
           window.alert('Clearance updated successfully');
         }
       } else {
-        await createClearance(
-          name,
-          description,
-          staffRole,
-          departmentsAllowed
-        );
+        await createClearance(name, description, staffRole, departmentsAllowed);
         if (Platform.OS !== 'web') {
           Alert.alert('Success', 'Clearance created successfully');
         } else {
@@ -92,42 +111,30 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
     setShowModal(true);
   };
 
-  const handleDeleteConfirm = async (id: string) => {
-    try {
-      await deleteClearance(id);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Success', 'Clearance deleted successfully');
-      } else {
-        window.alert('Clearance deleted successfully');
+  const confirmAction = (title: string, message: string, action: () => Promise<void>) => {
+    const run = async () => {
+      try {
+        await action();
+      } catch (error: any) {
+        if (Platform.OS !== 'web') {
+          Alert.alert('Error', error.message || 'Operation failed');
+        } else {
+          window.alert(`Error: ${error.message || 'Operation failed'}`);
+        }
       }
-    } catch (error: any) {
-      if (Platform.OS !== 'web') {
-        Alert.alert('Error', error.message || 'Failed to delete');
-      } else {
-        window.alert('Error: ' + (error.message || 'Failed to delete'));
-      }
-    }
-  };
+    };
 
-  const handleDelete = (id: string) => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to delete this clearance?')) {
-        handleDeleteConfirm(id);
+      if (window.confirm(message)) {
+        run();
       }
-    } else {
-      Alert.alert(
-        'Confirm Delete',
-        'Are you sure you want to delete this clearance?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => handleDeleteConfirm(id),
-          },
-        ]
-      );
+      return;
     }
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', style: 'destructive', onPress: () => run() },
+    ]);
   };
 
   return (
@@ -152,25 +159,52 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
         />
       </View>
 
-      {clearances.length === 0 ? (
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.tab, !showArchived && styles.activeTab]}
+          onPress={() => setShowArchived(false)}
+        >
+          <Text style={[styles.tabText, !showArchived && styles.activeTabText]}>
+            Active ({activeClearances.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, showArchived && styles.activeTab]}
+          onPress={() => setShowArchived(true)}
+        >
+          <Text style={[styles.tabText, showArchived && styles.activeTabText]}>
+            Archived ({archivedClearances.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {displayedClearances.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No clearances yet</Text>
-          <Text style={styles.emptySubtext}>Tap Add Clearance to create your first clearance</Text>
+          <Text style={styles.emptyText}>{showArchived ? 'No archived clearances' : 'No clearances yet'}</Text>
+          <Text style={styles.emptySubtext}>
+            {showArchived ? 'Archived clearances will appear here.' : 'Tap Add Clearance to create your first clearance.'}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={clearances}
+          data={displayedClearances}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity
               activeOpacity={0.8}
+              onPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               onLongPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               delayLongPress={200}
             >
               <Card>
                 <View style={styles.clearanceCard}>
                   <View style={styles.clearanceInfo}>
-                    <Text style={styles.clearanceName}>{item.name}</Text>
+                    <View style={styles.clearanceHeader}>
+                      <Text style={styles.clearanceName}>{item.name}</Text>
+                      <View style={[styles.statusBadge, showArchived && styles.archivedBadge]}>
+                        <Text style={styles.statusText}>{showArchived ? 'Archived' : 'Active'}</Text>
+                      </View>
+                    </View>
                     <Text style={styles.clearanceDescription}>{item.description}</Text>
                     <View style={styles.partsList}>
                       <Text style={styles.partItem}>
@@ -181,24 +215,61 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
                       <Text style={styles.clearanceMeta}>
                         {item.departmentsAllowed.length} department{item.departmentsAllowed.length !== 1 ? 's' : ''}
                       </Text>
-                      {item.departmentsAllowed.length > 0 && (
+                      {item.departmentsAllowed.length > 0 ? (
                         <Text style={styles.partItem}>
                           {item.departmentsAllowed
                             .map(deptId => departments.find(d => d.id === deptId)?.name || deptId)
                             .join(', ')}
                         </Text>
-                      )}
+                      ) : null}
                     </View>
+                    <Text style={styles.cardHintText}>
+                      {selectedCardId === item.id ? 'Tap card to hide actions' : 'Tap card to manage'}
+                    </Text>
                   </View>
                 </View>
                 {selectedCardId === item.id && (
                   <View style={styles.textActionsRow}>
-                    <TouchableOpacity onPress={() => handleEdit(item)} style={styles.textActionButton}>
-                      <Text style={styles.textAction}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.textActionButton}>
-                      <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
-                    </TouchableOpacity>
+                    {!showArchived ? (
+                      <>
+                        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.textActionButton}>
+                          <Text style={styles.textAction}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmAction('Archive Clearance', 'Archive this clearance?', async () => {
+                              await archiveClearance(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={styles.textAction}>Archive</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmAction('Restore Clearance', 'Restore this clearance?', async () => {
+                              await restoreClearance(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={styles.textAction}>Restore</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmAction('Delete Clearance', 'Permanently delete this archived clearance?', async () => {
+                              await deleteClearance(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 )}
               </Card>
@@ -208,7 +279,6 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
         />
       )}
 
-      {/* Modal for creating new clearance */}
       <Modal
         visible={showModal}
         transparent
@@ -242,12 +312,8 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
 
               <View style={styles.partContainer}>
                 <Text style={styles.label}>Assigned Staff Role</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.roleSelector}
-                >
-                  {staffRoles.map(role => (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.roleSelector}>
+                  {activeRoles.map(role => (
                     <TouchableOpacity
                       key={role.id}
                       style={[
@@ -255,7 +321,10 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
                         staffRole === role.id && styles.roleOptionSelected,
                         !!errors.staffRole && styles.roleOptionError,
                       ]}
-                      onPress={() => { setStaffRole(role.id); setErrors(prev => ({ ...prev, staffRole: undefined })); }}
+                      onPress={() => {
+                        setStaffRole(role.id);
+                        setErrors(prev => ({ ...prev, staffRole: undefined }));
+                      }}
                     >
                       <Text
                         style={[
@@ -267,11 +336,10 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
                       </Text>
                     </TouchableOpacity>
                   ))}
-                  </ScrollView>
+                </ScrollView>
                 {errors.staffRole ? <Text style={styles.fieldErrorText}>{errors.staffRole}</Text> : null}
               </View>
 
-              {/* Departments Selection */}
               <View style={styles.partContainer}>
                 <Text style={styles.label}>Assign to Departments</Text>
                 <Text style={styles.helperText}>Select which departments require this clearance</Text>
@@ -292,10 +360,12 @@ const AdminClearancesScreen: React.FC<AdminClearancesScreenProps> = ({ navigatio
                         setErrors(prev => ({ ...prev, departments: undefined }));
                       }}
                     >
-                      <Text style={[
-                        styles.departmentOptionText,
-                        departmentsAllowed.includes(dept.id) && styles.departmentOptionTextSelected,
-                      ]}>
+                      <Text
+                        style={[
+                          styles.departmentOptionText,
+                          departmentsAllowed.includes(dept.id) && styles.departmentOptionTextSelected,
+                        ]}
+                      >
                         {departmentsAllowed.includes(dept.id) ? '✓ ' : ''}{dept.name}
                       </Text>
                     </TouchableOpacity>
@@ -350,21 +420,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  backButton: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontWeight: '600',
-  },
   title: {
     ...Typography.h2,
     color: Colors.text,
     flex: 1,
     textAlign: 'left',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: Colors.primary,
+  },
+  tabText: {
+    ...Typography.body,
+    color: Colors.textLight,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: Colors.primary,
   },
   emptyContainer: {
     flex: 1,
@@ -390,9 +475,15 @@ const styles = StyleSheet.create({
   clearanceInfo: {
     flex: 1,
   },
+  clearanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
   clearanceName: {
     ...Typography.h3,
     color: Colors.text,
+    flex: 1,
   },
   clearanceDescription: {
     ...Typography.body,
@@ -414,6 +505,26 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textLight,
     marginVertical: Spacing.xs,
+  },
+  cardHintText: {
+    ...Typography.caption,
+    color: Colors.textLight,
+    marginTop: Spacing.sm,
+  },
+  statusBadge: {
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: 12,
+  },
+  archivedBadge: {
+    backgroundColor: Colors.textLight,
+  },
+  statusText: {
+    ...Typography.body,
+    color: Colors.surface,
+    fontSize: 12,
+    fontWeight: '600',
   },
   textActionsRow: {
     flexDirection: 'row',
@@ -453,12 +564,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: Spacing.lg,
   },
-  partsTitle: {
-    ...Typography.h3,
-    color: Colors.text,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
   partContainer: {
     marginBottom: Spacing.lg,
     paddingBottom: Spacing.lg,
@@ -493,12 +598,6 @@ const styles = StyleSheet.create({
   },
   roleOptionTextSelected: {
     color: Colors.textInverse,
-  },
-  removePartButton: {
-    marginTop: Spacing.md,
-  },
-  addPartButton: {
-    marginVertical: Spacing.md,
   },
   roleOptionError: {
     borderColor: Colors.rejected,
@@ -552,4 +651,3 @@ const styles = StyleSheet.create({
 });
 
 export default AdminClearancesScreen;
-

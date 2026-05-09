@@ -32,22 +32,6 @@ const getGreeting = () => {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-/** Pill badge for quick stat card */
-const TrendPill: React.FC<{ label: string; up?: boolean }> = ({ label, up = true }) => (
-  <View style={[pillStyles.pill, { backgroundColor: up ? Colors.approvedBg : Colors.rejectedBg }]}>
-    <MaterialCommunityIcons
-      name={up ? 'trending-up' : 'trending-down'}
-      size={11}
-      color={up ? Colors.approved : Colors.rejected}
-    />
-    <Text style={[pillStyles.text, { color: up ? Colors.approvedText : Colors.rejectedText }]}>{label}</Text>
-  </View>
-);
-const pillStyles = StyleSheet.create({
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: BorderRadius.full },
-  text: { ...Typography.captionBold },
-});
-
 /** Single quick-stat mini card */
 interface QuickStatProps {
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -240,17 +224,30 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   const { user } = useAuth();
   const { staffRoles, clearances, departments, pendingStudents, users } = useApp();
 
-  const activeDepartments = useMemo(
-    () => departments.filter((d) => d.status === 'active'),
-    [departments]
+  const activeDepartments = useMemo(() => departments.filter((d) => d.status === 'active'), [departments]);
+  const activeStaffRoles = useMemo(
+    () => staffRoles.filter((role) => (role.status || 'active') !== 'archived'),
+    [staffRoles]
+  );
+  const activeClearances = useMemo(
+    () => clearances.filter((clearance) => (clearance.status || 'active') !== 'archived'),
+    [clearances]
+  );
+  const activeStudents = useMemo(
+    () => users.filter((u) => u.role === 'student' && (u.status || 'active') !== 'archived'),
+    [users]
+  );
+  const activeStaff = useMemo(
+    () => users.filter((u) => u.role === 'staff' && (u.status || 'active') !== 'archived'),
+    [users]
   );
   const pendingCount   = pendingStudents.filter((s) => s.status === 'pending').length;
-  const staffCount     = users.filter((u) => u.role === 'staff').length;
-  const studentCount   = users.filter((u) => u.role === 'student').length;
+  const staffCount     = activeStaff.length;
+  const studentCount   = activeStudents.length;
   const firstName      = user?.name?.split(' ')[0] || 'Admin';
 
   // Clearance completion approximation across all student clearances
-  const totalClearances    = clearances.length;
+  const totalClearances    = activeClearances.length;
   const completionRate     = totalClearances === 0 ? 0 : Math.min(100, Math.round((activeDepartments.length / Math.max(1, departments.length)) * 100));
 
   return (
@@ -264,7 +261,7 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
         <View style={styles.welcomeLeft}>
           <Text style={styles.greeting}>{getGreeting()},</Text>
           <Text style={styles.adminName}>{firstName} 👋</Text>
-          <Text style={styles.welcomeSub}>Here's what's happening today.</Text>
+          <Text style={styles.welcomeSub}>Here&apos;s what&apos;s happening today.</Text>
         </View>
         <View style={styles.avatarCircle}>
           <Text style={styles.avatarLetter}>{(user?.name?.[0] || 'A').toUpperCase()}</Text>
@@ -303,7 +300,7 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
       <View style={styles.statsRow}>
         <QuickStat icon="account-school-outline"   label="Students"    value={studentCount}          color={Colors.primary}   onPress={() => navigation?.navigate('AdminStudents')} />
         <QuickStat icon="office-building-outline"  label="Departments" value={activeDepartments.length} color={Colors.secondary} onPress={() => navigation?.navigate('AdminDepartments')} />
-        <QuickStat icon="clipboard-check-outline"  label="Clearances"  value={clearances.length}     color={Colors.primary}   onPress={() => navigation?.navigate('AdminClearances')} />
+        <QuickStat icon="clipboard-check-outline"  label="Clearances"  value={activeClearances.length}     color={Colors.primary}   onPress={() => navigation?.navigate('AdminClearances')} />
         <QuickStat icon="clock-alert-outline"      label="Pending"     value={pendingCount}           color={pendingCount > 0 ? Colors.pending : Colors.primary} onPress={() => navigation?.navigate('AdminPendingStudents')} />
       </View>
 
@@ -321,7 +318,7 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
           </View>
           <View style={[styles.overviewBadge, { backgroundColor: Colors.secondaryMuted }]}>
             <MaterialCommunityIcons name="shield-account-outline" size={14} color={Colors.secondary} />
-            <Text style={[styles.overviewBadgeText, { color: Colors.secondary }]}>{staffRoles.length} Roles</Text>
+            <Text style={[styles.overviewBadgeText, { color: Colors.secondary }]}>{activeStaffRoles.length} Roles</Text>
           </View>
           <View style={[styles.overviewBadge, { backgroundColor: Colors.pendingBg }]}>
             <MaterialCommunityIcons name="clock-outline" size={14} color={Colors.pendingText} />
@@ -356,13 +353,13 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
         <ShortcutRow
           icon="clipboard-check-outline"
           label="Clearances"
-          subtitle={`${clearances.length} types configured`}
+          subtitle={`${activeClearances.length} types configured`}
           onPress={() => navigation?.navigate('AdminClearances')}
         />
         <ShortcutRow
           icon="shield-account-outline"
           label="Staff Roles"
-          subtitle={`${staffRoles.length} roles defined`}
+          subtitle={`${activeStaffRoles.length} roles defined`}
           onPress={() => navigation?.navigate('AdminStaffRoles')}
         />
         <ShortcutRow

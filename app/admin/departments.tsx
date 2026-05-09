@@ -258,6 +258,7 @@ const AdminDepartmentsScreen: React.FC<AdminDepartmentsScreenProps> = ({ navigat
           renderItem={({ item }) => (
             <TouchableOpacity
               activeOpacity={0.8}
+              onPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               onLongPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               delayLongPress={200}
             >
@@ -273,6 +274,9 @@ const AdminDepartmentsScreen: React.FC<AdminDepartmentsScreenProps> = ({ navigat
                       </View>
                     </View>
                     <Text style={styles.departmentDescription}>{item.description}</Text>
+                    <Text style={styles.cardHintText}>
+                      {selectedCardId === item.id ? 'Tap card to hide actions' : 'Tap card to manage'}
+                    </Text>
                   </View>
                 </View>
                 {selectedCardId === item.id && (
@@ -288,13 +292,15 @@ const AdminDepartmentsScreen: React.FC<AdminDepartmentsScreenProps> = ({ navigat
                       </>
                     )}
                     {item.status === 'archived' && (
-                      <TouchableOpacity onPress={() => handleRestore(item.id)} style={styles.textActionButton}>
-                        <Text style={styles.textAction}>Restore</Text>
-                      </TouchableOpacity>
+                      <>
+                        <TouchableOpacity onPress={() => handleRestore(item.id)} style={styles.textActionButton}>
+                          <Text style={styles.textAction}>Restore</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.textActionButton}>
+                          <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
+                        </TouchableOpacity>
+                      </>
                     )}
-                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.textActionButton}>
-                      <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
               </Card>
@@ -476,6 +482,11 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textLight,
     marginTop: Spacing.xs,
+  },
+  cardHintText: {
+    ...Typography.caption,
+    color: Colors.textLight,
+    marginTop: Spacing.sm,
   },
   textActionsRow: {
     flexDirection: 'row',

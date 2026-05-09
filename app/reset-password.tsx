@@ -1,6 +1,6 @@
 /**
  * Reset Password Screen
- * Allows users to enter a reset token and set a new password
+ * Allows users to enter a Firebase reset code and set a new password
  */
 
 import { Button } from '@/components/ui/button';
@@ -72,14 +72,14 @@ const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ route, naviga
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>Enter the token sent to your email and your new password</Text>
+        <Text style={styles.subtitle}>Enter the reset code from your email link and your new password</Text>
       </View>
 
       {/* Form */}
       <View style={styles.form}>
         <TextInput
-          label="Reset Token"
-          placeholder="Enter token"
+          label="Reset Code"
+          placeholder="Enter reset code"
           value={token}
           onChangeText={(val) => { setToken(val); setErrors(prev => ({ ...prev, token: undefined })); }}
           //autoCapitalize="none"

@@ -1,6 +1,6 @@
 /**
  * Admin Staff Roles Screen
- * Manage staff roles - create, edit, delete
+ * Manage staff roles with active and archived states.
  */
 
 import { Button } from '@/components/ui/button';
@@ -8,30 +8,48 @@ import { Card } from '@/components/ui/card';
 import { TextInput } from '@/components/ui/text-input';
 import { Colors, Spacing, Typography } from '@/constants/colors';
 import { useApp } from '@/context/AppContext';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Modal,
-    Platform,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 interface AdminStaffRolesScreenProps {
   navigation?: any;
 }
 
-const AdminStaffRolesScreen: React.FC<AdminStaffRolesScreenProps> = ({ navigation }) => {
-  const { staffRoles, createStaffRole, updateStaffRole, deleteStaffRole } = useApp();
+const AdminStaffRolesScreen: React.FC<AdminStaffRolesScreenProps> = () => {
+  const {
+    staffRoles,
+    createStaffRole,
+    updateStaffRole,
+    archiveStaffRole,
+    restoreStaffRole,
+    deleteStaffRole,
+  } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editRoleId, setEditRoleId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState<{name?: string, description?: string}>({});
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+
+  const activeRoles = useMemo(
+    () => staffRoles.filter((role) => (role.status || 'active') !== 'archived'),
+    [staffRoles]
+  );
+  const archivedRoles = useMemo(
+    () => staffRoles.filter((role) => (role.status || 'active') === 'archived'),
+    [staffRoles]
+  );
+  const displayedRoles = showArchived ? archivedRoles : activeRoles;
 
   const handleSave = async () => {
     const safeName = name || '';
@@ -81,42 +99,34 @@ const AdminStaffRolesScreen: React.FC<AdminStaffRolesScreenProps> = ({ navigatio
     setShowModal(true);
   };
 
-  const handleDeleteConfirm = async (id: string) => {
-    try {
-      await deleteStaffRole(id);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Success', 'Staff role deleted successfully');
-      } else {
-        window.alert('Staff role deleted successfully');
+  const confirmWebOrNative = (
+    title: string,
+    message: string,
+    action: () => Promise<void>
+  ) => {
+    const run = async () => {
+      try {
+        await action();
+      } catch (error: any) {
+        if (Platform.OS !== 'web') {
+          Alert.alert('Error', error.message || 'Operation failed');
+        } else {
+          window.alert(`Error: ${error.message || 'Operation failed'}`);
+        }
       }
-    } catch (error: any) {
-      if (Platform.OS !== 'web') {
-        Alert.alert('Error', error.message || 'Failed to delete');
-      } else {
-        window.alert('Error: ' + (error.message || 'Failed to delete'));
-      }
-    }
-  };
+    };
 
-  const handleDelete = (id: string) => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to delete this staff role?')) {
-        handleDeleteConfirm(id);
+      if (window.confirm(message)) {
+        run();
       }
-    } else {
-      Alert.alert(
-        'Confirm Delete',
-        'Are you sure you want to delete this staff role?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => handleDeleteConfirm(id),
-          },
-        ]
-      );
+      return;
     }
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', style: 'destructive', onPress: () => run() },
+    ]);
   };
 
   return (
@@ -139,36 +149,100 @@ const AdminStaffRolesScreen: React.FC<AdminStaffRolesScreenProps> = ({ navigatio
         />
       </View>
 
-      {staffRoles.length === 0 ? (
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.tab, !showArchived && styles.activeTab]}
+          onPress={() => setShowArchived(false)}
+        >
+          <Text style={[styles.tabText, !showArchived && styles.activeTabText]}>
+            Active ({activeRoles.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, showArchived && styles.activeTab]}
+          onPress={() => setShowArchived(true)}
+        >
+          <Text style={[styles.tabText, showArchived && styles.activeTabText]}>
+            Archived ({archivedRoles.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {displayedRoles.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No staff roles yet</Text>
-          <Text style={styles.emptySubtext}>Tap Add Role to create your first staff role</Text>
+          <Text style={styles.emptyText}>{showArchived ? 'No archived staff roles' : 'No staff roles yet'}</Text>
+          <Text style={styles.emptySubtext}>
+            {showArchived ? 'Archived staff roles will appear here.' : 'Tap Add Role to create your first staff role.'}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={staffRoles}
+          data={displayedRoles}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity
               activeOpacity={0.8}
+              onPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               onLongPress={() => setSelectedCardId(selectedCardId === item.id ? null : item.id)}
               delayLongPress={200}
             >
               <Card>
                 <View style={styles.roleCard}>
                   <View style={styles.roleInfo}>
-                    <Text style={styles.roleName}>{item.name}</Text>
+                    <View style={styles.roleHeader}>
+                      <Text style={styles.roleName}>{item.name}</Text>
+                      <View style={[styles.statusBadge, showArchived && styles.archivedBadge]}>
+                        <Text style={styles.statusText}>{showArchived ? 'Archived' : 'Active'}</Text>
+                      </View>
+                    </View>
                     <Text style={styles.roleDescription}>{item.description}</Text>
+                    <Text style={styles.cardHintText}>
+                      {selectedCardId === item.id ? 'Tap card to hide actions' : 'Tap card to manage'}
+                    </Text>
                   </View>
                 </View>
                 {selectedCardId === item.id && (
                   <View style={styles.textActionsRow}>
-                    <TouchableOpacity onPress={() => handleEdit(item)} style={styles.textActionButton}>
-                      <Text style={styles.textAction}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.textActionButton}>
-                      <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
-                    </TouchableOpacity>
+                    {!showArchived ? (
+                      <>
+                        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.textActionButton}>
+                          <Text style={styles.textAction}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmWebOrNative('Archive Role', 'Archive this staff role?', async () => {
+                              await archiveStaffRole(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={styles.textAction}>Archive</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmWebOrNative('Restore Role', 'Restore this staff role?', async () => {
+                              await restoreStaffRole(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={styles.textAction}>Restore</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmWebOrNative('Delete Role', 'Permanently delete this archived staff role?', async () => {
+                              await deleteStaffRole(item.id);
+                            })
+                          }
+                          style={styles.textActionButton}
+                        >
+                          <Text style={[styles.textAction, styles.textActionDelete]}>Delete</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 )}
               </Card>
@@ -178,7 +252,6 @@ const AdminStaffRolesScreen: React.FC<AdminStaffRolesScreenProps> = ({ navigatio
         />
       )}
 
-      {/* Modal for creating new role */}
       <Modal
         visible={showModal}
         transparent
@@ -252,21 +325,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  backButton: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontWeight: '600',
-  },
   title: {
     ...Typography.h2,
     color: Colors.text,
     flex: 1,
     textAlign: 'left',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: Colors.primary,
+  },
+  tabText: {
+    ...Typography.body,
+    color: Colors.textLight,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: Colors.primary,
   },
   emptyContainer: {
     flex: 1,
@@ -293,14 +381,40 @@ const styles = StyleSheet.create({
   roleInfo: {
     flex: 1,
   },
+  roleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
   roleName: {
     ...Typography.h3,
     color: Colors.text,
+    flex: 1,
   },
   roleDescription: {
     ...Typography.body,
     color: Colors.textLight,
     marginTop: Spacing.xs,
+  },
+  cardHintText: {
+    ...Typography.caption,
+    color: Colors.textLight,
+    marginTop: Spacing.sm,
+  },
+  statusBadge: {
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: 12,
+  },
+  archivedBadge: {
+    backgroundColor: Colors.textLight,
+  },
+  statusText: {
+    ...Typography.body,
+    color: Colors.surface,
+    fontSize: 12,
+    fontWeight: '600',
   },
   textActionsRow: {
     flexDirection: 'row',
@@ -350,4 +464,3 @@ const styles = StyleSheet.create({
 });
 
 export default AdminStaffRolesScreen;
-

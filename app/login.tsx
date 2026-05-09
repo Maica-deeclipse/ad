@@ -30,6 +30,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const { login, registerStudent, isLoading } = useAuth();
   const { departments } = useApp();
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null);
   
   // Login state
   const [email, setEmail] = useState('');
@@ -53,7 +54,30 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
   const activeDepartments = departments.filter((department) => department.status === 'active');
 
+  const handleWebSubmitKey = (callback: () => void) => (event: any) => {
+    if (event?.nativeEvent?.key === 'Enter' || event?.key === 'Enter') {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      callback();
+    }
+  };
+
+  const showMessage = (title: string, message: string) => {
+    setNotice({
+      type: title.toLowerCase().includes('failed') || title.toLowerCase().includes('error') ? 'error' : 'success',
+      title,
+      message,
+    });
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      return;
+    }
+
+    Alert.alert(title, message);
+  };
+
   const handleLogin = async () => {
+    setNotice(null);
     const newErrors: {email?: string; password?: string} = {};
     if (!email.trim()) newErrors.email = 'Email is required';
     if (!password.trim()) newErrors.password = 'Password is required';
@@ -62,12 +86,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
     try {
       await login(email, password);
-    } catch (error) {
-      Alert.alert('Login Failed', (error as any).message || 'Invalid credentials');
+    } catch (error: any) {
+      if (error?.message === 'Incorrect email or password.') {
+        setLoginErrors({
+          email: 'Incorrect email or password',
+          password: 'Incorrect email or password',
+        });
+      }
+      showMessage('Login Failed', error?.message || 'Invalid credentials');
     }
   };
 
   const handleRegister = async () => {
+    setNotice(null);
     const newErrors: {
       email?: string;
       name?: string;
@@ -92,7 +123,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
     try {
       await registerStudent(regEmail, regName, regPassword, regDepartment, regPhone || undefined);
-      Alert.alert(
+      showMessage(
         'Registration Successful',
         'Your registration has been submitted. Please wait for admin approval before you can log in.'
       );
@@ -105,7 +136,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
       setRegDepartment('');
       setActiveTab('login');
     } catch (error: any) {
-      Alert.alert('Registration Failed', (error as any).message || 'Please try again');
+      if ((error?.message || '').toLowerCase().includes('email')) {
+        setRegErrors((prev) => ({
+          ...prev,
+          email: error.message,
+        }));
+      }
+      showMessage('Registration Failed', error?.message || 'Please try again');
     }
   };
 
@@ -141,6 +178,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {notice ? (
+        <View
+          accessibilityRole="alert"
+          style={[
+            styles.noticeBox,
+            notice.type === 'error' ? styles.noticeError : styles.noticeSuccess,
+          ]}
+        >
+          <Text style={styles.noticeTitle}>{notice.title}</Text>
+          <Text style={styles.noticeText}>{notice.message}</Text>
+        </View>
+      ) : null}
+
       {/* Login Tab */}
       {activeTab === 'login' && (
         <>
@@ -160,6 +210,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               keyboardType="email-address"
               editable={!isLoading}
               error={loginErrors.email}
+              onKeyPress={handleWebSubmitKey(handleLogin)}
             />
 
             <TextInput
@@ -170,6 +221,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               secureTextEntry
               editable={!isLoading}
               error={loginErrors.password}
+              onSubmitEditing={handleLogin}
+              onKeyPress={handleWebSubmitKey(handleLogin)}
             />
 
             <TouchableOpacity 
@@ -218,6 +271,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               keyboardType="email-address"
               editable={!isLoading}
               error={regErrors.email}
+              onKeyPress={handleWebSubmitKey(handleRegister)}
             />
 
             <TextInput
@@ -281,6 +335,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               secureTextEntry
               editable={!isLoading}
               error={regErrors.confirmPassword}
+              onSubmitEditing={handleRegister}
+              onKeyPress={handleWebSubmitKey(handleRegister)}
             />
 
             <Button
@@ -363,6 +419,30 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     borderLeftWidth: 4,
     borderLeftColor: Colors.primary,
+  },
+  noticeBox: {
+    borderRadius: 8,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderLeftWidth: 4,
+  },
+  noticeError: {
+    backgroundColor: Colors.rejected + '12',
+    borderLeftColor: Colors.rejected,
+  },
+  noticeSuccess: {
+    backgroundColor: Colors.approved + '12',
+    borderLeftColor: Colors.approved,
+  },
+  noticeTitle: {
+    ...Typography.body,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  noticeText: {
+    ...Typography.body,
+    color: Colors.text,
   },
   infoTitle: {
     ...Typography.body,

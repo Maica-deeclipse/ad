@@ -11,6 +11,8 @@ interface TextInputProps {
   placeholder?: string;
   value: string;
   onChangeText: (text: string) => void;
+  onSubmitEditing?: () => void;
+  onKeyPress?: (event: any) => void;
   label?: string;
   multiline?: boolean;
   numberOfLines?: number;
@@ -25,6 +27,8 @@ export const TextInput: React.FC<TextInputProps> = ({
   placeholder,
   value,
   onChangeText,
+  onSubmitEditing,
+  onKeyPress,
   label,
   multiline = false,
   numberOfLines = 1,
@@ -41,6 +45,8 @@ export const TextInput: React.FC<TextInputProps> = ({
         placeholder={placeholder}
         value={value}
         onChangeText={onChangeText}
+        onSubmitEditing={onSubmitEditing}
+        onKeyPress={onKeyPress}
         multiline={multiline}
         numberOfLines={numberOfLines}
         secureTextEntry={secureTextEntry}

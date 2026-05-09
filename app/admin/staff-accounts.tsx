@@ -38,7 +38,14 @@ const AdminStaffAccountsScreen: React.FC<AdminStaffAccountsScreenProps> = ({ nav
   }>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  const staffUsers = useMemo(() => users.filter((user) => user.role === 'staff'), [users]);
+  const activeStaffRoles = useMemo(
+    () => staffRoles.filter((role) => (role.status || 'active') !== 'archived'),
+    [staffRoles]
+  );
+  const staffUsers = useMemo(
+    () => users.filter((user) => user.role === 'staff' && (user.status || 'active') !== 'archived'),
+    [users]
+  );
 
   const handleCreate = async () => {
     const nextErrors: typeof errors = {};
@@ -141,10 +148,10 @@ const AdminStaffAccountsScreen: React.FC<AdminStaffAccountsScreenProps> = ({ nav
 
             <Text style={styles.fieldLabel}>Staff Role</Text>
             <View style={styles.roleList}>
-              {staffRoles.length === 0 ? (
+              {activeStaffRoles.length === 0 ? (
                 <Text style={styles.helperText}>Create staff roles first before adding staff accounts.</Text>
               ) : (
-                staffRoles.map((role) => {
+                activeStaffRoles.map((role) => {
                   const isSelected = selectedRole === role.id;
                   return (
                     <TouchableOpacity
@@ -169,7 +176,7 @@ const AdminStaffAccountsScreen: React.FC<AdminStaffAccountsScreenProps> = ({ nav
               title={isSaving ? 'Creating...' : 'Create Staff Account'}
               onPress={handleCreate}
               variant="primary"
-              disabled={isSaving || staffRoles.length === 0}
+              disabled={isSaving || activeStaffRoles.length === 0}
               style={styles.createButton}
             />
           </Card>
