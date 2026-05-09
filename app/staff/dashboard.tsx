@@ -73,7 +73,7 @@ const StatCard: React.FC<StatCardProps> = ({ icon, value, label, color = Colors.
 
 const statStyles = StyleSheet.create({
   card: {
-    flex: 1,
+    width: '48%',
     backgroundColor: Colors.surfaceCard,
     borderRadius: BorderRadius.md,
     padding: Spacing.sm,
@@ -372,9 +372,11 @@ const styles = StyleSheet.create({
   // Quick Stats Row
   statsRow: {
     flexDirection: 'row',
-    gap: Spacing.xs,
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
+    justifyContent: 'space-between',
   },
 
   // Tab Bar
